@@ -5,6 +5,8 @@
 #include "fichatemplate.h"
 #include "formulaengine.h"
 #include "gerenciadortema.h"
+#include "googleauth.h"
+#include "sincronizadordrive.h"
 
 #include <QCheckBox>
 #include <QDateTime>
@@ -970,9 +972,19 @@ void TelaEdicao::salvar()
         return;
     }
 
+    const bool imagemNova = m_imagemArquivoAtual != ficha.imagemArquivo;
     m_imagemArquivoAtual = ficha.imagemArquivo;
     m_caminhoImagemOrigemNova.clear();
     marcarSalvo();
+
+    // Com uma conta do Google conectada, sincroniza essa ficha (e a imagem
+    // nova, se houver) com o Drive na hora — sem bloquear o "salvo" visual
+    // pro usuário nem travar o app em caso de falha de rede.
+    if (GoogleAuth::estaConectado()) {
+        SincronizadorDrive::enviarArquivoUnico(m_caminhoArquivoFicha);
+        if (imagemNova && !ficha.imagemArquivo.isEmpty())
+            SincronizadorDrive::enviarArquivoUnico(Armazenamento::pastaImagens() + "/" + ficha.imagemArquivo);
+    }
 
     emit salvo(m_caminhoArquivoFicha);
 }

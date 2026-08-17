@@ -240,6 +240,107 @@ QVector<Habilidade> extrairHabilidades(QStringList &restoLinhas)
     return habilidades;
 }
 
+// Procura uma seção "Inventário:" (com um peso total opcional na mesma linha,
+// ex. "Inventário: Peso 8.5") e extrai os itens até encontrar "Habilidades:",
+// uma linha separadora (====) ou o fim do texto. Aceita grupos separados por
+// linha em branco, quantidade no início ("2 kit médicos"), "PESO x" em
+// qualquer parte da linha, e itens "container" que terminam em ":" (ex.
+// "bloco de notas:") cujas linhas seguintes começando com "-" viram a
+// descrição do item, ao invés de itens novos. Uma linha "-algo" que não segue
+// um container vira ela mesma um item novo (ex. "-1 amolador").
+// Remove as linhas consumidas de "linhas" e devolve o peso total (se achado)
+// em "notaPesoTotal".
+QVector<ItemInventario> extrairInventario(QStringList &linhas, QString &notaPesoTotal)
+{
+    QVector<ItemInventario> itens;
+
+    static const QRegularExpression reHeader("^invent[aá]rio\\s*:?\\s*(.*)$", QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression rePeso("\\bpeso\\b\\s*:?\\s*([\\d.,]+)", QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression reQuantidade("^(\\d+)\\s*[xX]?\\s+(.+)$");
+
+    int inicio = -1;
+    QString restoHeader;
+    for (int i = 0; i < linhas.size(); ++i) {
+        const QString t = linhas[i].trimmed();
+        if (!t.toLower().startsWith("invent"))
+            continue;
+        const QRegularExpressionMatch m = reHeader.match(t);
+        if (m.hasMatch()) {
+            inicio = i;
+            restoHeader = m.captured(1);
+            break;
+        }
+    }
+    if (inicio < 0)
+        return itens;
+
+    int containerIdx = -1;
+    int fim = inicio + 1;
+    while (fim < linhas.size()) {
+        const QString t = linhas[fim].trimmed();
+
+        if (linhaSeparadora(t) || t.compare("Habilidades:", Qt::CaseInsensitive) == 0
+            || t.compare("Habilidades", Qt::CaseInsensitive) == 0)
+            break;
+
+        if (t.isEmpty()) {
+            containerIdx = -1;
+            fim++;
+            continue;
+        }
+
+        const bool ehBullet = t.startsWith('-');
+        if (ehBullet && containerIdx >= 0) {
+            ItemInventario &item = itens[containerIdx];
+            const QString conteudo = t.mid(1).trimmed();
+            if (!item.utilidade.isEmpty())
+                item.utilidade += '\n';
+            item.utilidade += conteudo;
+            fim++;
+            continue;
+        }
+
+        QString semPeso = ehBullet ? t.mid(1).trimmed() : t;
+        QString notaPeso;
+        const QRegularExpressionMatch mPeso = rePeso.match(semPeso);
+        if (mPeso.hasMatch()) {
+            notaPeso = QString("Peso %1").arg(mPeso.captured(1));
+            semPeso.remove(mPeso.capturedStart(0), mPeso.capturedLength(0));
+            semPeso = semPeso.simplified();
+        }
+
+        const bool ehContainer = semPeso.endsWith(':');
+        if (ehContainer)
+            semPeso.chop(1);
+        semPeso = semPeso.simplified();
+
+        int quantidade = 1;
+        const QRegularExpressionMatch mQtd = reQuantidade.match(semPeso);
+        if (mQtd.hasMatch()) {
+            quantidade = mQtd.captured(1).toInt();
+            semPeso = mQtd.captured(2).simplified();
+        }
+
+        ItemInventario item;
+        item.nome = semPeso;
+        item.quantidade = quantidade;
+        item.utilidade = notaPeso;
+        itens.append(item);
+
+        containerIdx = ehContainer ? itens.size() - 1 : -1;
+        fim++;
+    }
+
+    const QRegularExpressionMatch mPesoTotal = rePeso.match(restoHeader);
+    if (mPesoTotal.hasMatch())
+        notaPesoTotal = QString("Peso total do inventário: %1").arg(mPesoTotal.captured(1));
+
+    for (int i = fim - 1; i >= inicio; --i)
+        linhas.removeAt(i);
+
+    return itens;
+}
+
 // Fallback pra .txt que não segue o formato conhecido (sem os marcadores
 // ====Atributos====/====Sub-Atributos====): tenta identificar qualquer linha
 // "Rótulo: número" como um atributo solto, "Nome: ..." como o nome do
@@ -263,7 +364,12 @@ CharacterSheet importarGenerico(const QString &texto)
     CharacterSheet ficha;
     QStringList notas;
 
-    const QStringList linhas = texto.split('\n');
+    QStringList linhas = texto.split('\n');
+    QString notaPesoTotal;
+    ficha.inventario = extrairInventario(linhas, notaPesoTotal);
+    if (!notaPesoTotal.isEmpty())
+        notas << notaPesoTotal;
+
     for (const QString &linhaOriginal : linhas) {
         const QString t = limparMarcacaoMarkdown(linhaOriginal.trimmed());
         if (t.isEmpty()) {
@@ -433,6 +539,8 @@ CharacterSheet CharacterSheet::importarDeTexto(const QString &texto, bool *usouF
         *usouFormatoGenerico = false;
 
     const QVector<Habilidade> habilidades = extrairHabilidades(restoLinhas);
+    QString notaPesoTotal;
+    const QVector<ItemInventario> inventario = extrairInventario(restoLinhas, notaPesoTotal);
 
     CharacterSheet ficha;
     ficha.nome = nome;
@@ -445,12 +553,15 @@ CharacterSheet CharacterSheet::importarDeTexto(const QString &texto, bool *usouF
     ficha.discernimento = discernimento;
     ficha.atributos = atributos;
     ficha.habilidades = habilidades;
+    ficha.inventario = inventario;
 
     QStringList partesDescricao;
     const QString headerTexto = headerLinhas.join('\n').trimmed();
     const QString restoTexto = restoLinhas.join('\n').trimmed();
     if (!headerTexto.isEmpty())
         partesDescricao << headerTexto;
+    if (!notaPesoTotal.isEmpty())
+        partesDescricao << notaPesoTotal;
     if (!restoTexto.isEmpty())
         partesDescricao << restoTexto;
     ficha.descricao = partesDescricao.join("\n\n");

@@ -68,6 +68,8 @@ add_executable(FichaRPG
     src/sincronizadordrive.cpp
     src/googledrivedialog.h
     src/googledrivedialog.cpp
+    src/contadialog.h
+    src/contadialog.cpp
     resources/icons.qrc
 )
 

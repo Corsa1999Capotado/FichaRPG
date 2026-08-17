@@ -170,4 +170,51 @@ QString baixarTudo(QWidget *pai)
     progresso.setValue(downloads.size());
     return QString();
 }
+
+QString enviarArquivoUnico(const QString &caminhoLocal)
+{
+    if (!GoogleAuth::estaConectado())
+        return "Não conectado.";
+
+    const QString accessToken = GoogleAuth::obterAccessTokenValido();
+    if (accessToken.isEmpty())
+        return "Não foi possível autenticar com o Google.";
+
+    QString erro;
+    const QString raiz = GoogleDrive::encontrarOuCriarPasta(accessToken, "FichaRPG", QString(), &erro);
+    if (raiz.isEmpty())
+        return QString("Falha ao preparar as pastas no Drive: %1").arg(erro);
+
+    const QFileInfo info(caminhoLocal);
+    const QString pastaPai = info.dir().dirName();
+    const QString avoDaPasta = info.dir().path();
+
+    QString idPastaDestino;
+    if (avoDaPasta == Armazenamento::pastaTemplates()) {
+        idPastaDestino = GoogleDrive::encontrarOuCriarPasta(accessToken, "templates", raiz, &erro);
+    } else if (avoDaPasta == Armazenamento::pastaImagens()) {
+        idPastaDestino = GoogleDrive::encontrarOuCriarPasta(accessToken, "imagens", raiz, &erro);
+    } else {
+        // fichas/<categoria>/arquivo.json
+        const QString idFichas = GoogleDrive::encontrarOuCriarPasta(accessToken, "fichas", raiz, &erro);
+        if (idFichas.isEmpty())
+            return QString("Falha ao preparar as pastas no Drive: %1").arg(erro);
+        idPastaDestino = GoogleDrive::encontrarOuCriarPasta(accessToken, pastaPai, idFichas, &erro);
+    }
+    if (idPastaDestino.isEmpty())
+        return QString("Falha ao preparar as pastas no Drive: %1").arg(erro);
+
+    QFile arquivo(caminhoLocal);
+    if (!arquivo.open(QIODevice::ReadOnly))
+        return "Não foi possível ler o arquivo local.";
+    const QByteArray conteudo = arquivo.readAll();
+    arquivo.close();
+
+    QString erroEnvio;
+    const QString id = GoogleDrive::enviarArquivo(accessToken, idPastaDestino, info.fileName(), conteudo, mimeParaArquivo(caminhoLocal), &erroEnvio);
+    if (id.isEmpty())
+        return QString("Falha ao enviar \"%1\": %2").arg(info.fileName(), erroEnvio);
+
+    return QString();
+}
 }

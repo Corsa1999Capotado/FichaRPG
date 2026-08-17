@@ -44,6 +44,8 @@ private:
     void abrirFiltroAvancado();
     void abrirPreferencias();
     void abrirGoogleDrive();
+    void abrirConta();
+    void atualizarBotaoConta();
     void reposicionarBotaoNovo();
     void aplicarFundoGradiente();
     void mostrarToast(const QString &mensagem, const QString &corHex);
@@ -61,4 +63,5 @@ private:
     QGridLayout *m_grid;
     QVector<CardFicha *> m_cards;
     QPushButton *m_botaoNovo; // FAB flutuante, filho direto da tela
+    QPushButton *m_botaoConta;
 };

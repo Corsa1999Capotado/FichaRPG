@@ -72,9 +72,16 @@ public:
     static CharacterSheet modeloArca();
 
     // Interpreta um .txt no formato de ficha "solta" (nome, idade, altura, vida,
-    // discernimento, atributos, sub-atributos, habilidades e o resto cai nas notas).
+    // discernimento, atributos, sub-atributos, habilidades, inventário e o resto
+    // cai nas notas). A seção de inventário é reconhecida por uma linha
+    // "Inventário:" (com peso total opcional, ex. "Inventário: Peso 8.5”),
+    // seguida pelos itens — um por linha, com quantidade opcional no início
+    // ("2 kit médicos"), "PESO x" em qualquer parte da linha, e itens que
+    // terminam em ":" (ex. "bloco de notas:") viram um item cujas linhas
+    // seguintes começando com "-" formam a descrição.
     // Se o texto não seguir os marcadores conhecidos (====Atributos==== etc.), cai
     // num modo genérico que tenta detectar pares "Nome: número" como atributos —
-    // nesse caso, *usouFormatoGenerico (se não for nullptr) vira true.
+    // nesse caso, *usouFormatoGenerico (se não for nullptr) vira true. O
+    // inventário é extraído em ambos os modos.
     static CharacterSheet importarDeTexto(const QString &texto, bool *usouFormatoGenerico = nullptr);
 };

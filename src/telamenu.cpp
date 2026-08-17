@@ -3,10 +3,12 @@
 #include "armazenamento.h"
 #include "cardficha.h"
 #include "character.h"
+#include "contadialog.h"
 #include "exportador.h"
 #include "fichatemplate.h"
 #include "gerenciadortema.h"
 #include "gerenciarpastasdialog.h"
+#include "googleauth.h"
 #include "googledrivedialog.h"
 #include "painelfichas.h"
 #include "preferencias.h"
@@ -99,6 +101,11 @@ TelaMenu::TelaMenu(QWidget *parent)
     QPushButton *botaoGoogleDrive = new QPushButton("☁️ Google Drive");
     connect(botaoGoogleDrive, &QPushButton::clicked, this, &TelaMenu::abrirGoogleDrive);
     layoutCabecalho->addWidget(botaoGoogleDrive);
+
+    m_botaoConta = new QPushButton("Conta: offline test");
+    connect(m_botaoConta, &QPushButton::clicked, this, &TelaMenu::abrirConta);
+    layoutCabecalho->addWidget(m_botaoConta);
+    atualizarBotaoConta();
 
     layoutRaiz->addWidget(cabecalho);
 
@@ -251,6 +258,28 @@ void TelaMenu::abrirGoogleDrive()
     GoogleDriveDialog dialogo(this);
     dialogo.exec();
     atualizarLista(); // "Baixar tudo" pode ter trazido pastas/fichas novas
+    atualizarBotaoConta();
+}
+
+void TelaMenu::abrirConta()
+{
+    ContaDialog dialogo(this);
+    dialogo.exec();
+    atualizarBotaoConta();
+}
+
+void TelaMenu::atualizarBotaoConta()
+{
+    const bool conectado = GoogleAuth::estaConectado();
+    QString textoBotao;
+    if (conectado) {
+        const QString email = GoogleAuth::emailConectado();
+        textoBotao = email.isEmpty() ? QString("Conta: conectada") : QString("Conta: %1").arg(email);
+    } else {
+        textoBotao = QString("Conta: não conectado");
+    }
+    m_botaoConta->setText(textoBotao);
+    m_botaoConta->setToolTip(conectado ? "Ver conta conectada" : "Nenhuma conta do Google conectada");
 }
 
 void TelaMenu::atualizarCategorias()
