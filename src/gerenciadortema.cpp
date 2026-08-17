@@ -114,6 +114,18 @@ QString GerenciadorTema::gerarFolhaEstilo(const Tema &t) const
     folha += QString("QMainWindow, QDialog, QMessageBox { background-color: %1; }").arg(t.corFundo);
     folha += QString("QLabel { color: %1; background: transparent; }").arg(t.corTexto);
     folha += QString("QLineEdit, QTextEdit, QListWidget, QSpinBox { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: 3px; }").arg(t.corCard, t.corTexto, t.corBorda);
+    // Assim que um QSpinBox ganha border/padding customizados (linha acima), o Qt
+    // para de calcular sozinho onde ficam os botões nativos de subir/descer — sem
+    // declarar a geometria deles aqui, as setinhas ficam espremidas/sobrepostas
+    // pela caixa de texto e não dá pra clicar. Só precisa reservar a área; o
+    // desenho da seta em si continua vindo do estilo nativo.
+    folha += QString("QSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 16px; "
+                      "border-left: 1px solid %1; border-top-right-radius: 4px; }")
+                 .arg(t.corBorda);
+    folha += QString("QSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 16px; "
+                      "border-left: 1px solid %1; border-bottom-right-radius: 4px; }")
+                 .arg(t.corBorda);
+    folha += QString("QSpinBox::up-button:hover, QSpinBox::down-button:hover { background-color: %1; }").arg(t.corCardHover);
     folha += QString("QPushButton { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: 6px 12px; }").arg(t.corCard, t.corTexto, t.corBorda);
     folha += QString("QPushButton:hover { background-color: %1; }").arg(t.corCardHover);
     // Botão checkable "ligado" (ex: negrito/itálico/alinhamento ativos no editor de notas)

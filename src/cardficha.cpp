@@ -1,6 +1,7 @@
 #include "cardficha.h"
 
 #include "gerenciadortema.h"
+#include "imagemutil.h"
 
 #include <QCursor>
 #include <QLabel>
@@ -47,7 +48,7 @@ CardFicha::CardFicha(const QString &caminhoArquivo, const CharacterSheet &ficha,
     if (pixmap.isNull())
         fotoLabel->setText("Sem foto");
     else
-        fotoLabel->setPixmap(pixmap.scaled(fotoLabel->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        fotoLabel->setPixmap(ImagemUtil::recortarComFoco(pixmap, fotoLabel->size(), QPointF(ficha.imagemFocoX, ficha.imagemFocoY)));
     pilha->addWidget(fotoLabel);
 
     QWidget *overlayNome = new QWidget;

@@ -1,5 +1,7 @@
 #include "cardpainel.h"
 
+#include "imagemutil.h"
+
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -9,7 +11,8 @@
 #include <QVBoxLayout>
 
 CardPainel::CardPainel(const QString &caminhoArquivo, const QString &nome, const QString &caminhoImagem,
-                        int vidaAtual, int vidaMax, bool pinada, const QString &corDestaque, QWidget *parent)
+                        int vidaAtual, int vidaMax, bool pinada, const QString &corDestaque, QPointF focoImagem,
+                        QWidget *parent)
     : QWidget(parent)
     , m_caminhoArquivo(caminhoArquivo)
     , m_corDestaque(corDestaque)
@@ -33,7 +36,7 @@ CardPainel::CardPainel(const QString &caminhoArquivo, const QString &nome, const
     if (pixmap.isNull())
         fotoLabel->setText("Sem foto");
     else
-        fotoLabel->setPixmap(pixmap.scaled(fotoLabel->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        fotoLabel->setPixmap(ImagemUtil::recortarComFoco(pixmap, fotoLabel->size(), focoImagem));
     layout->addWidget(fotoLabel);
 
     QVBoxLayout *colunaInfo = new QVBoxLayout;

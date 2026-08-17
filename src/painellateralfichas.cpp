@@ -161,7 +161,7 @@ void PainelLateralFichas::construirCards(const QString &caminhoAtivo)
             caminhoImagem = Armazenamento::pastaImagens() + "/" + ficha.imagemArquivo;
 
         CardPainel *card = new CardPainel(entrada.caminho, ficha.nome, caminhoImagem, ficha.vidaAtual, ficha.vidaMax,
-                                           entrada.pinada, corDestaque);
+                                           entrada.pinada, corDestaque, QPointF(ficha.imagemFocoX, ficha.imagemFocoY));
         card->definirAtiva(entrada.caminho == caminhoAtivo);
         card->definirPodeSubir(i > 0 && entradas[i - 1].pinada == entrada.pinada);
         card->definirPodeDescer(i < entradas.size() - 1 && entradas[i + 1].pinada == entrada.pinada);

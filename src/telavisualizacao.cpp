@@ -4,6 +4,7 @@
 #include "editornotas.h"
 #include "exportador.h"
 #include "gerenciadortema.h"
+#include "imagemutil.h"
 #include "painelfichas.h"
 #include "painellateralfichas.h"
 #include "preferencias.h"
@@ -210,6 +211,16 @@ void TelaVisualizacao::montarInterface()
     linhaDiscernimento->addWidget(botaoDiscMais);
     linhaDiscernimento->addStretch();
 
+    // Recursos personalizados (definidos pelo mestre, além de vida/sanidade/discernimento)
+    m_recursosLayout = new QVBoxLayout;
+    QPushButton *botaoAddRecurso = new QPushButton("➕ Adicionar recurso");
+    botaoAddRecurso->setProperty("compact", true);
+    connect(botaoAddRecurso, &QPushButton::clicked, this, &TelaVisualizacao::adicionarRecurso);
+    QHBoxLayout *linhaAddRecurso = new QHBoxLayout;
+    linhaAddRecurso->addStretch();
+    linhaAddRecurso->addWidget(botaoAddRecurso);
+    linhaAddRecurso->addStretch();
+
     colunaEsquerda->addStretch();
     colunaEsquerda->addWidget(m_imagemLabel, 0, Qt::AlignHCenter);
     colunaEsquerda->addWidget(m_nomeLabel);
@@ -219,6 +230,9 @@ void TelaVisualizacao::montarInterface()
     colunaEsquerda->addLayout(linhaVida);
     colunaEsquerda->addLayout(linhaSanidade);
     colunaEsquerda->addLayout(linhaDiscernimento);
+    colunaEsquerda->addSpacing(10);
+    colunaEsquerda->addLayout(m_recursosLayout);
+    colunaEsquerda->addLayout(linhaAddRecurso);
     colunaEsquerda->addStretch();
 
     // Coluna direita (~70%) — abas
@@ -233,13 +247,13 @@ void TelaVisualizacao::montarInterface()
     scrollAtributos->setWidget(paginaAtributos);
     abas->addTab(scrollAtributos, "📊 Atributos");
 
-    QWidget *paginaPericias = new QWidget;
-    m_periciasLayout = new QVBoxLayout(paginaPericias);
-    m_periciasLayout->setAlignment(Qt::AlignTop);
-    QScrollArea *scrollPericias = new QScrollArea;
-    scrollPericias->setWidgetResizable(true);
-    scrollPericias->setWidget(paginaPericias);
-    abas->addTab(scrollPericias, "🎯 Perícias");
+    QWidget *paginaSubAtributos = new QWidget;
+    m_subAtributosLayout = new QVBoxLayout(paginaSubAtributos);
+    m_subAtributosLayout->setAlignment(Qt::AlignTop);
+    QScrollArea *scrollSubAtributos = new QScrollArea;
+    scrollSubAtributos->setWidgetResizable(true);
+    scrollSubAtributos->setWidget(paginaSubAtributos);
+    abas->addTab(scrollSubAtributos, "📈 Sub-Atributos");
 
     QWidget *paginaHabilidades = new QWidget;
     m_habilidadesLayout = new QVBoxLayout(paginaHabilidades);
@@ -348,6 +362,63 @@ void TelaVisualizacao::ajustarDiscernimento(int delta)
     if (m_caminhoArquivoAtual.isEmpty())
         return;
     m_fichaAtual.discernimento = qBound(0, m_fichaAtual.discernimento + delta, 100);
+    persistirEAtualizar();
+}
+
+void TelaVisualizacao::ajustarRecurso(int indice, int delta)
+{
+    if (m_caminhoArquivoAtual.isEmpty() || indice < 0 || indice >= m_fichaAtual.recursos.size())
+        return;
+    RecursoCustom &r = m_fichaAtual.recursos[indice];
+    const int max = r.max > 0 ? r.max : 999999;
+    r.atual = qBound(0, r.atual + delta, max);
+    persistirEAtualizar();
+}
+
+void TelaVisualizacao::adicionarRecurso()
+{
+    if (m_caminhoArquivoAtual.isEmpty())
+        return;
+
+    QDialog dialogo(this);
+    dialogo.setWindowTitle("Adicionar recurso");
+    QFormLayout *form = new QFormLayout(&dialogo);
+
+    QLineEdit *nomeEdit = new QLineEdit;
+    nomeEdit->setPlaceholderText("ex: Estresse, Munição, Fadiga");
+    QSpinBox *maxSpin = new QSpinBox;
+    maxSpin->setRange(0, 999999);
+    maxSpin->setSpecialValueText("Sem máximo (só contador)");
+
+    form->addRow("Nome:", nomeEdit);
+    form->addRow("Máximo:", maxSpin);
+
+    QDialogButtonBox *botoes = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(botoes, &QDialogButtonBox::accepted, &dialogo, &QDialog::accept);
+    connect(botoes, &QDialogButtonBox::rejected, &dialogo, &QDialog::reject);
+    form->addRow(botoes);
+
+    if (dialogo.exec() != QDialog::Accepted)
+        return;
+    if (nomeEdit->text().trimmed().isEmpty())
+        return;
+
+    RecursoCustom recurso;
+    recurso.nome = nomeEdit->text().trimmed();
+    recurso.max = maxSpin->value();
+    recurso.atual = recurso.max;
+    m_fichaAtual.recursos.append(recurso);
+
+    persistirEAtualizar();
+}
+
+void TelaVisualizacao::removerRecurso(int indice)
+{
+    if (m_caminhoArquivoAtual.isEmpty() || indice < 0 || indice >= m_fichaAtual.recursos.size())
+        return;
+    if (QMessageBox::question(this, "Remover recurso", QString("Remover \"%1\"?").arg(m_fichaAtual.recursos[indice].nome)) != QMessageBox::Yes)
+        return;
+    m_fichaAtual.recursos.remove(indice);
     persistirEAtualizar();
 }
 
@@ -469,6 +540,24 @@ void TelaVisualizacao::adicionarItemInventario()
     persistirEAtualizar();
 }
 
+void TelaVisualizacao::ajustarQuantidadeItem(int indice, int delta)
+{
+    if (m_caminhoArquivoAtual.isEmpty() || indice < 0 || indice >= m_fichaAtual.inventario.size())
+        return;
+
+    ItemInventario &item = m_fichaAtual.inventario[indice];
+    if (item.quantidade + delta <= 0) {
+        if (QMessageBox::question(this, "Remover item", QString("\"%1\" vai ficar com 0. Remover o item do inventário?").arg(item.nome))
+            != QMessageBox::Yes)
+            return;
+        m_fichaAtual.inventario.remove(indice);
+    } else {
+        item.quantidade += delta;
+    }
+
+    persistirEAtualizar();
+}
+
 void TelaVisualizacao::ajustarDinheiro(bool adicionar)
 {
     if (m_caminhoArquivoAtual.isEmpty())
@@ -487,7 +576,7 @@ void TelaVisualizacao::ajustarDinheiro(bool adicionar)
     persistirEAtualizar();
 }
 
-QWidget *TelaVisualizacao::criarCardAtributo(const QString &nome, int valor)
+QWidget *TelaVisualizacao::criarCardAtributo(const QString &nome, int valor, const QString &descricao)
 {
     const Tema tema = GerenciadorTema::instancia().temaAtual();
 
@@ -495,6 +584,8 @@ QWidget *TelaVisualizacao::criarCardAtributo(const QString &nome, int valor)
     card->setAttribute(Qt::WA_Hover, true);
     card->setMinimumSize(110, 90);
     card->setProperty("card", true);
+    if (!descricao.trimmed().isEmpty())
+        card->setToolTip(descricao);
 
     QVBoxLayout *layout = new QVBoxLayout(card);
 
@@ -512,7 +603,7 @@ QWidget *TelaVisualizacao::criarCardAtributo(const QString &nome, int valor)
     return card;
 }
 
-QWidget *TelaVisualizacao::criarLinhaPericia(const QString &nome, int valor)
+QWidget *TelaVisualizacao::criarLinhaSubAtributo(const QString &nome, int valor)
 {
     const Tema tema = GerenciadorTema::instancia().temaAtual();
 
@@ -527,6 +618,33 @@ QWidget *TelaVisualizacao::criarLinhaPericia(const QString &nome, int valor)
 
     layout->addWidget(nomeLabel, 1);
     layout->addWidget(valorLabel);
+    return linha;
+}
+
+QWidget *TelaVisualizacao::criarLinhaRecurso(int indice, const QString &nome, int atual, int max)
+{
+    QFrame *linha = new QFrame;
+    linha->setAttribute(Qt::WA_Hover, true);
+    linha->setProperty("card", true);
+
+    QHBoxLayout *layout = new QHBoxLayout(linha);
+    QPushButton *botaoMenos = criarBotaoAjuste("-");
+    QLabel *label = new QLabel(max > 0 ? QString("%1: %2 / %3").arg(nome).arg(atual).arg(max) : QString("%1: %2").arg(nome).arg(atual));
+    label->setStyleSheet("font-weight: bold;");
+    QPushButton *botaoMais = criarBotaoAjuste("+");
+    QPushButton *botaoRemover = new QPushButton("🗑");
+    botaoRemover->setFixedSize(26, 26);
+    botaoRemover->setProperty("compact", true);
+    botaoRemover->setProperty("danger", true);
+
+    connect(botaoMenos, &QPushButton::clicked, this, [this, indice]() { ajustarRecurso(indice, -1); });
+    connect(botaoMais, &QPushButton::clicked, this, [this, indice]() { ajustarRecurso(indice, 1); });
+    connect(botaoRemover, &QPushButton::clicked, this, [this, indice]() { removerRecurso(indice); });
+
+    layout->addWidget(botaoMenos);
+    layout->addWidget(label, 1);
+    layout->addWidget(botaoMais);
+    layout->addWidget(botaoRemover);
     return linha;
 }
 
@@ -552,7 +670,7 @@ QWidget *TelaVisualizacao::criarCardItem(const QString &nome, const QString &des
     return card;
 }
 
-QWidget *TelaVisualizacao::criarLinhaInventario(int quantidade, const QString &nome, const QString &utilidade)
+QWidget *TelaVisualizacao::criarLinhaInventario(int indice, int quantidade, const QString &nome, const QString &utilidade, bool contavel)
 {
     const Tema tema = GerenciadorTema::instancia().temaAtual();
 
@@ -562,10 +680,24 @@ QWidget *TelaVisualizacao::criarLinhaInventario(int quantidade, const QString &n
 
     QHBoxLayout *layout = new QHBoxLayout(linha);
 
-    QLabel *qtdLabel = new QLabel(QString("%1x").arg(quantidade));
-    qtdLabel->setFixedWidth(40);
-    qtdLabel->setAlignment(Qt::AlignCenter);
-    qtdLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(tema.corAccent));
+    if (contavel) {
+        QPushButton *botaoMenos = criarBotaoAjuste("-");
+        connect(botaoMenos, &QPushButton::clicked, this, [this, indice]() { ajustarQuantidadeItem(indice, -1); });
+
+        QLabel *qtdLabel = new QLabel(QString("%1x").arg(quantidade));
+        qtdLabel->setFixedWidth(32);
+        qtdLabel->setAlignment(Qt::AlignCenter);
+        qtdLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(tema.corAccent));
+
+        QPushButton *botaoMais = criarBotaoAjuste("+");
+        connect(botaoMais, &QPushButton::clicked, this, [this, indice]() { ajustarQuantidadeItem(indice, 1); });
+
+        layout->addWidget(botaoMenos);
+        layout->addWidget(qtdLabel);
+        layout->addWidget(botaoMais);
+    } else {
+        layout->addSpacing(84); // mantém nome/utilidade alinhados com as linhas contáveis, sem os controles de +/-
+    }
 
     QLabel *nomeLabel = new QLabel(nome.isEmpty() ? "Sem nome" : nome);
     nomeLabel->setStyleSheet("font-weight: bold;");
@@ -575,7 +707,6 @@ QWidget *TelaVisualizacao::criarLinhaInventario(int quantidade, const QString &n
     utilLabel->setWordWrap(true);
     utilLabel->setStyleSheet(QString("color: %1;").arg(tema.corTextoSecundario));
 
-    layout->addWidget(qtdLabel);
     layout->addWidget(nomeLabel, 1);
     layout->addWidget(utilLabel, 2);
     return linha;
@@ -676,7 +807,7 @@ void TelaVisualizacao::preencherConteudo(const CharacterSheet &ficha)
         m_imagemLabel->setPixmap(QPixmap());
         m_imagemLabel->setText("Sem imagem");
     } else {
-        m_imagemLabel->setPixmap(pixmap.scaled(m_imagemLabel->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        m_imagemLabel->setPixmap(ImagemUtil::recortarComFoco(pixmap, m_imagemLabel->size(), QPointF(ficha.imagemFocoX, ficha.imagemFocoY)));
         m_imagemLabel->setText(QString());
     }
 
@@ -689,6 +820,13 @@ void TelaVisualizacao::preencherConteudo(const CharacterSheet &ficha)
     m_discernimentoLabel->setText(QString("Discernimento: %1%").arg(ficha.discernimento));
     m_discernimentoLabel->setStyleSheet(QString("font-size: 15px; font-weight: bold; color: %1;").arg(corParaDiscernimento(tema, ficha.discernimento)));
 
+    // Recursos personalizados
+    limparLayout(m_recursosLayout);
+    for (int i = 0; i < ficha.recursos.size(); ++i) {
+        const RecursoCustom &r = ficha.recursos[i];
+        m_recursosLayout->addWidget(criarLinhaRecurso(i, r.nome, r.atual, r.max));
+    }
+
     const QString semResultado = m_filtroTexto.trimmed().isEmpty() ? QString() : "Nenhum resultado para a busca.";
 
     // Atributos
@@ -700,7 +838,7 @@ void TelaVisualizacao::preencherConteudo(const CharacterSheet &ficha)
     for (const Atributo &a : ficha.atributos) {
         if (!correspondeAoFiltro(a.nome) && !correspondeAoFiltro(QString::number(a.valor)))
             continue;
-        m_atributosGrid->addWidget(criarCardAtributo(a.nome, a.valor), linha, coluna);
+        m_atributosGrid->addWidget(criarCardAtributo(a.nome, a.valor, a.descricao), linha, coluna);
         temAtributo = true;
         coluna++;
         if (coluna >= colunas) {
@@ -711,9 +849,9 @@ void TelaVisualizacao::preencherConteudo(const CharacterSheet &ficha)
     if (!temAtributo && !semResultado.isEmpty())
         m_atributosGrid->addWidget(new QLabel(semResultado), 0, 0);
 
-    // Perícias (sub-atributos agrupados pelo atributo pai)
-    limparLayout(m_periciasLayout);
-    bool temPericia = false;
+    // Sub-Atributos (agrupados pelo atributo pai)
+    limparLayout(m_subAtributosLayout);
+    bool temSubAtributo = false;
     for (const Atributo &a : ficha.atributos) {
         if (a.subAtributos.isEmpty())
             continue;
@@ -730,25 +868,41 @@ void TelaVisualizacao::preencherConteudo(const CharacterSheet &ficha)
 
         QLabel *tituloGrupo = new QLabel(a.nome);
         tituloGrupo->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px;").arg(tema.corTextoSecundario));
-        m_periciasLayout->addWidget(tituloGrupo);
+        m_subAtributosLayout->addWidget(tituloGrupo);
 
         for (const SubAtributo &s : visiveis) {
-            m_periciasLayout->addWidget(criarLinhaPericia(s.nome, s.valor));
-            temPericia = true;
+            m_subAtributosLayout->addWidget(criarLinhaSubAtributo(s.nome, s.valor));
+            temSubAtributo = true;
         }
     }
-    if (!temPericia)
-        m_periciasLayout->addWidget(new QLabel(semResultado.isEmpty() ? "Nenhuma perícia cadastrada." : semResultado));
-    m_periciasLayout->addStretch();
+    if (!temSubAtributo)
+        m_subAtributosLayout->addWidget(new QLabel(semResultado.isEmpty() ? "Nenhum sub-atributo cadastrado." : semResultado));
+    m_subAtributosLayout->addStretch();
 
-    // Habilidades
+    // Habilidades (agrupadas por seção, quando houver — ex: "Rituais", "Habilidades de combate")
     limparLayout(m_habilidadesLayout);
     bool temHabilidade = false;
-    for (const Habilidade &hab : ficha.habilidades) {
-        if (!correspondeAoFiltro(hab.nome) && !correspondeAoFiltro(hab.descricao))
-            continue;
-        m_habilidadesLayout->addWidget(criarCardItem(hab.nome, hab.descricao));
-        temHabilidade = true;
+    {
+        QStringList ordemCategorias;
+        QMap<QString, QVector<Habilidade>> porCategoria;
+        for (const Habilidade &hab : ficha.habilidades) {
+            if (!correspondeAoFiltro(hab.nome) && !correspondeAoFiltro(hab.descricao))
+                continue;
+            if (!porCategoria.contains(hab.categoria))
+                ordemCategorias << hab.categoria;
+            porCategoria[hab.categoria].append(hab);
+        }
+        for (const QString &categoria : ordemCategorias) {
+            if (!categoria.isEmpty()) {
+                QLabel *tituloSecao = new QLabel(categoria);
+                tituloSecao->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px;").arg(tema.corTextoSecundario));
+                m_habilidadesLayout->addWidget(tituloSecao);
+            }
+            for (const Habilidade &hab : porCategoria.value(categoria)) {
+                m_habilidadesLayout->addWidget(criarCardItem(hab.nome, hab.descricao));
+                temHabilidade = true;
+            }
+        }
     }
     if (!temHabilidade)
         m_habilidadesLayout->addWidget(new QLabel(semResultado.isEmpty() ? "Nenhuma habilidade cadastrada." : semResultado));
@@ -760,10 +914,11 @@ void TelaVisualizacao::preencherConteudo(const CharacterSheet &ficha)
 
     limparLayout(m_inventarioLayout);
     bool temItem = false;
-    for (const ItemInventario &item : ficha.inventario) {
+    for (int i = 0; i < ficha.inventario.size(); ++i) {
+        const ItemInventario &item = ficha.inventario[i];
         if (!correspondeAoFiltro(item.nome) && !correspondeAoFiltro(item.utilidade) && !correspondeAoFiltro(QString::number(item.quantidade)))
             continue;
-        m_inventarioLayout->addWidget(criarLinhaInventario(item.quantidade, item.nome, item.utilidade));
+        m_inventarioLayout->addWidget(criarLinhaInventario(i, item.quantidade, item.nome, item.utilidade, item.contavel));
         temItem = true;
     }
     if (!temItem)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointF>
 #include <QWidget>
 
 class QLabel;
@@ -15,7 +16,8 @@ class CardPainel : public QWidget
 
 public:
     explicit CardPainel(const QString &caminhoArquivo, const QString &nome, const QString &caminhoImagem,
-                         int vidaAtual, int vidaMax, bool pinada, const QString &corDestaque, QWidget *parent = nullptr);
+                         int vidaAtual, int vidaMax, bool pinada, const QString &corDestaque,
+                         QPointF focoImagem = QPointF(0.5, 0.5), QWidget *parent = nullptr);
 
     QString caminhoArquivo() const { return m_caminhoArquivo; }
 

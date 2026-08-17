@@ -13,9 +13,9 @@ class EditorNotas;
 class PainelLateralFichas;
 
 // Tela de visualização (somente leitura, exceto vida/discernimento) de uma
-// ficha: imagem/nome/idade/altura/vida/discernimento à esquerda, abas com
-// atributos/perícias/habilidades/inventário/notas à direita, tema escuro e
-// botão flutuante de editar.
+// ficha: imagem/nome/idade/altura/vida/discernimento/recursos à esquerda,
+// abas com atributos/sub-atributos/habilidades/inventário/notas à direita,
+// tema escuro e botão flutuante de editar.
 class TelaVisualizacao : public QWidget
 {
     Q_OBJECT
@@ -42,21 +42,26 @@ private:
     void ajustarVida(int delta);
     void ajustarSanidade(int delta);
     void ajustarDiscernimento(int delta);
+    void ajustarRecurso(int indice, int delta);
+    void adicionarRecurso();
+    void removerRecurso(int indice);
     void persistirEAtualizar();
     void exportarFicha();
     void excluirFicha();
     void notasAlteradas();
     void adicionarItemInventario();
+    void ajustarQuantidadeItem(int indice, int delta);
     void ajustarDinheiro(bool adicionar);
     void alternarPainelFichas();
     void abrirFichaDoPainel(const QString &caminho);
     void abrirNesimaFichaDoPainel(int indiceUm);
     void adicionarFichaAoPainel();
 
-    QWidget *criarCardAtributo(const QString &nome, int valor);
-    QWidget *criarLinhaPericia(const QString &nome, int valor);
+    QWidget *criarCardAtributo(const QString &nome, int valor, const QString &descricao);
+    QWidget *criarLinhaSubAtributo(const QString &nome, int valor);
     QWidget *criarCardItem(const QString &nome, const QString &descricao);
-    QWidget *criarLinhaInventario(int quantidade, const QString &nome, const QString &utilidade);
+    QWidget *criarLinhaInventario(int indice, int quantidade, const QString &nome, const QString &utilidade, bool contavel);
+    QWidget *criarLinhaRecurso(int indice, const QString &nome, int atual, int max);
     bool correspondeAoFiltro(const QString &texto) const;
 
     QLineEdit *m_buscaEdit;
@@ -71,8 +76,9 @@ private:
     QLabel *m_discernimentoLabel;
     QLabel *m_dinheiroLabel;
 
+    QVBoxLayout *m_recursosLayout;
     QGridLayout *m_atributosGrid;
-    QVBoxLayout *m_periciasLayout;
+    QVBoxLayout *m_subAtributosLayout;
     QVBoxLayout *m_habilidadesLayout;
     QVBoxLayout *m_inventarioLayout;
     EditorNotas *m_notasEdit;

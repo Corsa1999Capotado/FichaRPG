@@ -1,11 +1,13 @@
 #include "telaedicao.h"
 
+#include "ajustarfotodialog.h"
 #include "armazenamento.h"
 #include "editornotas.h"
 #include "fichatemplate.h"
 #include "formulaengine.h"
 #include "gerenciadortema.h"
 #include "googleauth.h"
+#include "imagemutil.h"
 #include "sincronizadordrive.h"
 
 #include <QCheckBox>
@@ -24,6 +26,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
+#include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
 
@@ -78,16 +81,25 @@ void TelaEdicao::montarInterface()
     connect(botaoSalvarTemplate, &QPushButton::clicked, this, &TelaEdicao::salvarComoTemplate);
     connect(botaoRestaurarBackup, &QPushButton::clicked, this, &TelaEdicao::restaurarBackup);
 
-    // Conteúdo rolável
-    QWidget *conteudo = new QWidget;
-    QVBoxLayout *layoutConteudo = new QVBoxLayout(conteudo);
+    QTabWidget *abas = new QTabWidget;
+    auto envolverEmScroll = [](QWidget *pagina) {
+        QScrollArea *scroll = new QScrollArea;
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setWidget(pagina);
+        return scroll;
+    };
+
+    // ==================== Aba Geral ====================
+    QWidget *paginaGeral = new QWidget;
+    QVBoxLayout *layoutGeral = new QVBoxLayout(paginaGeral);
 
     QHBoxLayout *linhaNome = new QHBoxLayout;
     linhaNome->addWidget(new QLabel("👤 Nome:"));
     m_nomeEdit = new QLineEdit;
     m_nomeEdit->setPlaceholderText("Nome do personagem");
     linhaNome->addWidget(m_nomeEdit, 1);
-    layoutConteudo->addLayout(linhaNome);
+    layoutGeral->addLayout(linhaNome);
 
     connect(m_nomeEdit, &QLineEdit::textChanged, this, [this](const QString &texto) {
         marcarAlterado();
@@ -108,36 +120,49 @@ void TelaEdicao::montarInterface()
     m_alturaEdit->setPlaceholderText("ex: 1,87m");
     connect(m_alturaEdit, &QLineEdit::textChanged, this, [this]() { marcarAlterado(); });
     linhaIdadeAltura->addWidget(m_alturaEdit, 1);
-    layoutConteudo->addLayout(linhaIdadeAltura);
+    layoutGeral->addLayout(linhaIdadeAltura);
 
-    QHBoxLayout *linhaVidaDiscernimento = new QHBoxLayout;
-    linhaVidaDiscernimento->addWidget(new QLabel("❤️ Vida:"));
+    QHBoxLayout *linhaImagem = new QHBoxLayout;
+    m_imagemPreview = new QLabel;
+    m_imagemPreview->setFixedSize(180, 180);
+    m_imagemPreview->setAlignment(Qt::AlignCenter);
+    m_imagemPreview->setStyleSheet("background-color: palette(midlight); border-radius: 6px;");
+    m_imagemPreview->setText("Sem imagem");
+
+    QVBoxLayout *colunaBotaoImagem = new QVBoxLayout;
+    QPushButton *botaoImagem = new QPushButton("🖼️ Carregar imagem...");
+    connect(botaoImagem, &QPushButton::clicked, this, &TelaEdicao::escolherImagem);
+    colunaBotaoImagem->addWidget(botaoImagem);
+
+    m_botaoAjustarFoto = new QPushButton("🎯 Ajustar enquadramento...");
+    connect(m_botaoAjustarFoto, &QPushButton::clicked, this, &TelaEdicao::ajustarEnquadramentoImagem);
+    colunaBotaoImagem->addWidget(m_botaoAjustarFoto);
+    colunaBotaoImagem->addStretch();
+
+    linhaImagem->addWidget(m_imagemPreview);
+    linhaImagem->addLayout(colunaBotaoImagem);
+    linhaImagem->addStretch();
+    layoutGeral->addLayout(linhaImagem);
+
+    layoutGeral->addStretch();
+    abas->addTab(envolverEmScroll(paginaGeral), "👤 Geral");
+
+    // ==================== Aba Status ====================
+    QWidget *paginaStatus = new QWidget;
+    QVBoxLayout *layoutStatus = new QVBoxLayout(paginaStatus);
+
+    QHBoxLayout *linhaVida = new QHBoxLayout;
+    linhaVida->addWidget(new QLabel("❤️ Vida:"));
     m_vidaAtualSpin = new QSpinBox;
     m_vidaAtualSpin->setRange(0, 999);
     connect(m_vidaAtualSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
     m_vidaMaxSpin = new QSpinBox;
     m_vidaMaxSpin->setRange(0, 999);
-    linhaVidaDiscernimento->addWidget(m_vidaAtualSpin);
-    linhaVidaDiscernimento->addWidget(new QLabel("/"));
-    linhaVidaDiscernimento->addWidget(m_vidaMaxSpin);
-    linhaVidaDiscernimento->addSpacing(16);
-    linhaVidaDiscernimento->addWidget(new QLabel("🧠 Sanidade:"));
-    m_sanidadeAtualSpin = new QSpinBox;
-    m_sanidadeAtualSpin->setRange(0, 999);
-    connect(m_sanidadeAtualSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
-    m_sanidadeMaxSpin = new QSpinBox;
-    m_sanidadeMaxSpin->setRange(0, 999);
-    linhaVidaDiscernimento->addWidget(m_sanidadeAtualSpin);
-    linhaVidaDiscernimento->addWidget(new QLabel("/"));
-    linhaVidaDiscernimento->addWidget(m_sanidadeMaxSpin);
-    linhaVidaDiscernimento->addSpacing(16);
-    linhaVidaDiscernimento->addWidget(new QLabel("🔮 Discernimento:"));
-    m_discernimentoSpin = new QSpinBox;
-    m_discernimentoSpin->setRange(0, 100);
-    m_discernimentoSpin->setSuffix("%");
-    linhaVidaDiscernimento->addWidget(m_discernimentoSpin);
-    linhaVidaDiscernimento->addStretch();
-    layoutConteudo->addLayout(linhaVidaDiscernimento);
+    linhaVida->addWidget(m_vidaAtualSpin);
+    linhaVida->addWidget(new QLabel("/"));
+    linhaVida->addWidget(m_vidaMaxSpin);
+    linhaVida->addStretch();
+    layoutStatus->addLayout(linhaVida);
 
     QHBoxLayout *linhaFormulaVida = new QHBoxLayout;
     m_vidaAutomaticaCheck = new QCheckBox("fx Vida automática:");
@@ -159,7 +184,22 @@ void TelaEdicao::montarInterface()
     });
     linhaFormulaVida->addWidget(m_vidaAutomaticaCheck);
     linhaFormulaVida->addWidget(m_formulaVidaEdit, 1);
-    layoutConteudo->addLayout(linhaFormulaVida);
+    layoutStatus->addLayout(linhaFormulaVida);
+
+    layoutStatus->addSpacing(10);
+
+    QHBoxLayout *linhaSanidade = new QHBoxLayout;
+    linhaSanidade->addWidget(new QLabel("🧠 Sanidade:"));
+    m_sanidadeAtualSpin = new QSpinBox;
+    m_sanidadeAtualSpin->setRange(0, 999);
+    connect(m_sanidadeAtualSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
+    m_sanidadeMaxSpin = new QSpinBox;
+    m_sanidadeMaxSpin->setRange(0, 999);
+    linhaSanidade->addWidget(m_sanidadeAtualSpin);
+    linhaSanidade->addWidget(new QLabel("/"));
+    linhaSanidade->addWidget(m_sanidadeMaxSpin);
+    linhaSanidade->addStretch();
+    layoutStatus->addLayout(linhaSanidade);
 
     QHBoxLayout *linhaFormulaSanidade = new QHBoxLayout;
     m_sanidadeAutomaticaCheck = new QCheckBox("fx Sanidade automática:");
@@ -180,7 +220,18 @@ void TelaEdicao::montarInterface()
     });
     linhaFormulaSanidade->addWidget(m_sanidadeAutomaticaCheck);
     linhaFormulaSanidade->addWidget(m_formulaSanidadeEdit, 1);
-    layoutConteudo->addLayout(linhaFormulaSanidade);
+    layoutStatus->addLayout(linhaFormulaSanidade);
+
+    layoutStatus->addSpacing(10);
+
+    QHBoxLayout *linhaDiscernimento = new QHBoxLayout;
+    linhaDiscernimento->addWidget(new QLabel("🔮 Discernimento:"));
+    m_discernimentoSpin = new QSpinBox;
+    m_discernimentoSpin->setRange(0, 100);
+    m_discernimentoSpin->setSuffix("%");
+    linhaDiscernimento->addWidget(m_discernimentoSpin);
+    linhaDiscernimento->addStretch();
+    layoutStatus->addLayout(linhaDiscernimento);
 
     QHBoxLayout *linhaFormulaDiscernimento = new QHBoxLayout;
     m_discernimentoAutomaticoCheck = new QCheckBox("fx Discernimento automático:");
@@ -201,27 +252,34 @@ void TelaEdicao::montarInterface()
     });
     linhaFormulaDiscernimento->addWidget(m_discernimentoAutomaticoCheck);
     linhaFormulaDiscernimento->addWidget(m_formulaDiscernimentoEdit, 1);
-    layoutConteudo->addLayout(linhaFormulaDiscernimento);
+    layoutStatus->addLayout(linhaFormulaDiscernimento);
 
-    QHBoxLayout *linhaImagem = new QHBoxLayout;
-    m_imagemPreview = new QLabel;
-    m_imagemPreview->setFixedSize(180, 180);
-    m_imagemPreview->setAlignment(Qt::AlignCenter);
-    m_imagemPreview->setStyleSheet("background-color: palette(midlight); border-radius: 6px;");
-    m_imagemPreview->setText("Sem imagem");
+    layoutStatus->addSpacing(16);
 
-    QVBoxLayout *colunaBotaoImagem = new QVBoxLayout;
-    QPushButton *botaoImagem = new QPushButton("🖼️ Carregar imagem...");
-    connect(botaoImagem, &QPushButton::clicked, this, &TelaEdicao::escolherImagem);
-    colunaBotaoImagem->addWidget(botaoImagem);
-    colunaBotaoImagem->addStretch();
+    QHBoxLayout *cabecalhoRecursos = new QHBoxLayout;
+    QLabel *labelRecursos = new QLabel("🎛️ Recursos personalizados:");
+    labelRecursos->setStyleSheet("font-weight: bold;");
+    QPushButton *botaoAddRecurso = new QPushButton("➕ Recurso");
+    botaoAddRecurso->setProperty("accent", true);
+    connect(botaoAddRecurso, &QPushButton::clicked, this, [this]() {
+        adicionarRecursoUI();
+        marcarAlterado();
+    });
+    cabecalhoRecursos->addWidget(labelRecursos);
+    cabecalhoRecursos->addStretch();
+    cabecalhoRecursos->addWidget(botaoAddRecurso);
+    layoutStatus->addLayout(cabecalhoRecursos);
 
-    linhaImagem->addWidget(m_imagemPreview);
-    linhaImagem->addLayout(colunaBotaoImagem);
-    linhaImagem->addStretch();
-    layoutConteudo->addLayout(linhaImagem);
+    m_recursosLayout = new QVBoxLayout;
+    layoutStatus->addLayout(m_recursosLayout);
 
-    // Atributos
+    layoutStatus->addStretch();
+    abas->addTab(envolverEmScroll(paginaStatus), "❤️ Status");
+
+    // ==================== Aba Atributos ====================
+    QWidget *paginaAtributos = new QWidget;
+    QVBoxLayout *layoutAtributos = new QVBoxLayout(paginaAtributos);
+
     QHBoxLayout *cabecalhoAtributos = new QHBoxLayout;
     QLabel *labelAtributos = new QLabel("📊 Atributos:");
     labelAtributos->setStyleSheet("font-weight: bold;");
@@ -234,12 +292,17 @@ void TelaEdicao::montarInterface()
     cabecalhoAtributos->addWidget(labelAtributos);
     cabecalhoAtributos->addStretch();
     cabecalhoAtributos->addWidget(botaoAddAtributo);
-    layoutConteudo->addLayout(cabecalhoAtributos);
+    layoutAtributos->addLayout(cabecalhoAtributos);
 
     m_atributosLayout = new QVBoxLayout;
-    layoutConteudo->addLayout(m_atributosLayout);
+    layoutAtributos->addLayout(m_atributosLayout);
+    layoutAtributos->addStretch();
+    abas->addTab(envolverEmScroll(paginaAtributos), "📊 Atributos");
 
-    // Inventário
+    // ==================== Aba Inventário ====================
+    QWidget *paginaInventario = new QWidget;
+    QVBoxLayout *layoutInventario = new QVBoxLayout(paginaInventario);
+
     QHBoxLayout *linhaDinheiro = new QHBoxLayout;
     linhaDinheiro->addWidget(new QLabel("💰 Dinheiro:"));
     m_dinheiroSpin = new QDoubleSpinBox;
@@ -249,7 +312,7 @@ void TelaEdicao::montarInterface()
     connect(m_dinheiroSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
     linhaDinheiro->addWidget(m_dinheiroSpin);
     linhaDinheiro->addStretch();
-    layoutConteudo->addLayout(linhaDinheiro);
+    layoutInventario->addLayout(linhaDinheiro);
 
     QHBoxLayout *cabecalhoInventario = new QHBoxLayout;
     QLabel *labelInventario = new QLabel("🎒 Inventário:");
@@ -263,58 +326,60 @@ void TelaEdicao::montarInterface()
     cabecalhoInventario->addWidget(labelInventario);
     cabecalhoInventario->addStretch();
     cabecalhoInventario->addWidget(botaoAddItem);
-    layoutConteudo->addLayout(cabecalhoInventario);
+    layoutInventario->addLayout(cabecalhoInventario);
 
     QHBoxLayout *legendaInventario = new QHBoxLayout;
+    legendaInventario->addSpacing(24); // reserva o espaço do checkbox "🔢 Contável" da linha de baixo
+    legendaInventario->addSpacing(24); // reserva o espaço do botão "-" da linha de baixo
     QLabel *legendaQtd = new QLabel("Qtd.");
-    legendaQtd->setFixedWidth(48);
+    legendaQtd->setFixedWidth(40);
+    legendaQtd->setAlignment(Qt::AlignCenter);
+    legendaInventario->addWidget(legendaQtd);
+    legendaInventario->addSpacing(24); // reserva o espaço do botão "+"
     QLabel *legendaNome = new QLabel("Nome");
     QLabel *legendaUtil = new QLabel("Utilidade");
     for (QLabel *l : {legendaQtd, legendaNome, legendaUtil})
         l->setStyleSheet("color: palette(mid); font-size: 11px;");
-    legendaInventario->addWidget(legendaQtd);
     legendaInventario->addWidget(legendaNome, 1);
     legendaInventario->addWidget(legendaUtil, 2);
     legendaInventario->addSpacing(84); // reserva o espaço dos botões ▲▼x da linha de baixo
-    layoutConteudo->addLayout(legendaInventario);
+    layoutInventario->addLayout(legendaInventario);
 
     m_inventarioLayout = new QVBoxLayout;
-    layoutConteudo->addLayout(m_inventarioLayout);
+    layoutInventario->addLayout(m_inventarioLayout);
+    layoutInventario->addStretch();
+    abas->addTab(envolverEmScroll(paginaInventario), "🎒 Inventário");
 
-    // Habilidades
+    // ==================== Aba Habilidades ====================
+    QWidget *paginaHabilidades = new QWidget;
+    QVBoxLayout *layoutHabilidades = new QVBoxLayout(paginaHabilidades);
+
     QHBoxLayout *cabecalhoHabilidades = new QHBoxLayout;
     QLabel *labelHabilidades = new QLabel("✨ Habilidades:");
     labelHabilidades->setStyleSheet("font-weight: bold;");
-    QPushButton *botaoAddHabilidade = new QPushButton("➕ Habilidade");
-    botaoAddHabilidade->setProperty("accent", true);
-    connect(botaoAddHabilidade, &QPushButton::clicked, this, [this]() {
-        adicionarLinhaNomeDescricaoUI(m_habilidadesLayout, m_habilidades, QString(), QString());
+    QPushButton *botaoAddCategoria = new QPushButton("➕ Seção");
+    botaoAddCategoria->setToolTip("Cria uma área separada, ex: \"Rituais\", \"Habilidades de combate\"");
+    botaoAddCategoria->setProperty("accent", true);
+    connect(botaoAddCategoria, &QPushButton::clicked, this, [this]() {
+        adicionarCategoriaHabilidadesUI();
         marcarAlterado();
     });
     cabecalhoHabilidades->addWidget(labelHabilidades);
     cabecalhoHabilidades->addStretch();
-    cabecalhoHabilidades->addWidget(botaoAddHabilidade);
-    layoutConteudo->addLayout(cabecalhoHabilidades);
+    cabecalhoHabilidades->addWidget(botaoAddCategoria);
+    layoutHabilidades->addLayout(cabecalhoHabilidades);
 
     m_habilidadesLayout = new QVBoxLayout;
-    layoutConteudo->addLayout(m_habilidadesLayout);
+    layoutHabilidades->addLayout(m_habilidadesLayout);
+    layoutHabilidades->addStretch();
+    abas->addTab(envolverEmScroll(paginaHabilidades), "✨ Habilidades");
 
-    // Notas
-    QLabel *labelNotas = new QLabel("📝 Notas:");
-    labelNotas->setStyleSheet("font-weight: bold;");
-    layoutConteudo->addWidget(labelNotas);
+    // ==================== Aba Notas ====================
     m_descricaoEdit = new EditorNotas;
-    m_descricaoEdit->setMinimumHeight(160);
     connect(m_descricaoEdit, &EditorNotas::conteudoAlterado, this, [this]() { marcarAlterado(); });
-    layoutConteudo->addWidget(m_descricaoEdit);
+    abas->addTab(m_descricaoEdit, "📝 Notas");
 
-    layoutConteudo->addStretch();
-
-    QScrollArea *scroll = new QScrollArea;
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setWidget(conteudo);
-    layoutRaiz->addWidget(scroll);
+    layoutRaiz->addWidget(abas, 1);
 }
 
 TelaEdicao::AtributoWidgets *TelaEdicao::encontrarAtributoPorGrupo(QWidget *grupo)
@@ -342,12 +407,22 @@ void TelaEdicao::adicionarAtributoUI(const Atributo &modelo)
     valorSpin->setValue(modelo.valor);
     valorSpin->setEnabled(!modelo.automatico);
     valorSpin->setProperty("calculado", modelo.automatico);
+    QPushButton *botaoSubir = new QPushButton("▲");
+    botaoSubir->setFixedWidth(24);
+    botaoSubir->setProperty("compact", true);
+    botaoSubir->setToolTip("Mover pra cima");
+    QPushButton *botaoDescer = new QPushButton("▼");
+    botaoDescer->setFixedWidth(24);
+    botaoDescer->setProperty("compact", true);
+    botaoDescer->setToolTip("Mover pra baixo");
     QPushButton *botaoRemover = new QPushButton("🗑 Remover");
     botaoRemover->setProperty("danger", true);
 
     cabecalho->addWidget(nomeEdit, 1);
     cabecalho->addWidget(new QLabel("Pontos:"));
     cabecalho->addWidget(valorSpin);
+    cabecalho->addWidget(botaoSubir);
+    cabecalho->addWidget(botaoDescer);
     cabecalho->addWidget(botaoRemover);
     layoutGrupo->addLayout(cabecalho);
 
@@ -360,6 +435,14 @@ void TelaEdicao::adicionarAtributoUI(const Atributo &modelo)
     linhaFormula->addWidget(automaticoCheck);
     linhaFormula->addWidget(formulaEdit, 1);
     layoutGrupo->addLayout(linhaFormula);
+
+    QHBoxLayout *linhaDescricao = new QHBoxLayout;
+    linhaDescricao->addWidget(new QLabel("Descrição:"));
+    QLineEdit *descricaoEdit = new QLineEdit(modelo.descricao);
+    descricaoEdit->setPlaceholderText("O que esse atributo significa/faz (opcional)");
+    connect(descricaoEdit, &QLineEdit::textChanged, this, [this]() { marcarAlterado(); });
+    linhaDescricao->addWidget(descricaoEdit, 1);
+    layoutGrupo->addLayout(linhaDescricao);
 
     QVBoxLayout *subLayout = new QVBoxLayout;
     layoutGrupo->addLayout(subLayout);
@@ -374,6 +457,7 @@ void TelaEdicao::adicionarAtributoUI(const Atributo &modelo)
     widgets.valorSpin = valorSpin;
     widgets.automaticoCheck = automaticoCheck;
     widgets.formulaEdit = formulaEdit;
+    widgets.descricaoEdit = descricaoEdit;
     widgets.subLayout = subLayout;
     m_atributos.append(widgets);
 
@@ -406,6 +490,14 @@ void TelaEdicao::adicionarAtributoUI(const Atributo &modelo)
 
     connect(botaoRemover, &QPushButton::clicked, this, [this, grupo]() {
         removerAtributo(grupo);
+        marcarAlterado();
+    });
+    connect(botaoSubir, &QPushButton::clicked, this, [this, grupo]() {
+        moverAtributo(grupo, -1);
+        marcarAlterado();
+    });
+    connect(botaoDescer, &QPushButton::clicked, this, [this, grupo]() {
+        moverAtributo(grupo, 1);
         marcarAlterado();
     });
     connect(botaoAddSub, &QPushButton::clicked, this, [this, grupo]() {
@@ -469,6 +561,29 @@ void TelaEdicao::removerAtributo(QWidget *grupo)
     }
 }
 
+void TelaEdicao::moverAtributo(QWidget *grupo, int direcao)
+{
+    int indice = -1;
+    for (int i = 0; i < m_atributos.size(); ++i) {
+        if (m_atributos[i].grupo == grupo) {
+            indice = i;
+            break;
+        }
+    }
+    if (indice < 0)
+        return;
+
+    const int destino = indice + direcao;
+    if (destino < 0 || destino >= m_atributos.size())
+        return;
+
+    m_atributos.swapItemsAt(indice, destino);
+
+    const int posicaoLayout = m_atributosLayout->indexOf(grupo);
+    m_atributosLayout->removeWidget(grupo);
+    m_atributosLayout->insertWidget(posicaoLayout + direcao, grupo);
+}
+
 void TelaEdicao::removerSubAtributo(QWidget *grupo, QWidget *linha)
 {
     AtributoWidgets *aw = encontrarAtributoPorGrupo(grupo);
@@ -511,12 +626,12 @@ void TelaEdicao::moverSubAtributoParaOutroGrupo(QWidget *grupoOrigem, QWidget *l
     }
 
     if (opcoes.isEmpty()) {
-        QMessageBox::information(this, "Mover perícia", "Não há outro atributo pra mover essa perícia.");
+        QMessageBox::information(this, "Mover sub-atributo", "Não há outro atributo pra mover esse sub-atributo.");
         return;
     }
 
     bool ok = false;
-    const QString escolhido = QInputDialog::getItem(this, "Mover perícia", "Mover pra qual atributo?", opcoes, 0, false, &ok);
+    const QString escolhido = QInputDialog::getItem(this, "Mover sub-atributo", "Mover pra qual atributo?", opcoes, 0, false, &ok);
     if (!ok)
         return;
 
@@ -638,15 +753,172 @@ void TelaEdicao::limparListaUI(QVBoxLayout *layout, QVector<LinhaNomeDescricaoWi
     lista.clear();
 }
 
+TelaEdicao::CategoriaHabilidadesWidgets *TelaEdicao::encontrarCategoriaPorGrupo(QWidget *grupo)
+{
+    for (CategoriaHabilidadesWidgets &c : m_categoriasHabilidades) {
+        if (c.grupo == grupo)
+            return &c;
+    }
+    return nullptr;
+}
+
+void TelaEdicao::adicionarCategoriaHabilidadesUI(const QString &nomeCategoria, const QVector<Habilidade> &itens)
+{
+    QWidget *grupo = new QWidget;
+    grupo->setObjectName("grupoCategoriaHabilidades");
+    grupo->setStyleSheet("#grupoCategoriaHabilidades { border: 1px solid palette(mid); border-radius: 6px; margin-top: 4px; }");
+
+    QVBoxLayout *layoutGrupo = new QVBoxLayout(grupo);
+
+    QHBoxLayout *cabecalho = new QHBoxLayout;
+    QLineEdit *nomeEdit = new QLineEdit(nomeCategoria);
+    nomeEdit->setPlaceholderText("Nome da seção (ex: Rituais) — em branco fica geral");
+    connect(nomeEdit, &QLineEdit::textChanged, this, [this]() { marcarAlterado(); });
+
+    QPushButton *botaoSubir = new QPushButton("▲");
+    botaoSubir->setFixedWidth(24);
+    botaoSubir->setProperty("compact", true);
+    botaoSubir->setToolTip("Mover seção pra cima");
+    QPushButton *botaoDescer = new QPushButton("▼");
+    botaoDescer->setFixedWidth(24);
+    botaoDescer->setProperty("compact", true);
+    botaoDescer->setToolTip("Mover seção pra baixo");
+    QPushButton *botaoRemover = new QPushButton("🗑 Remover seção");
+    botaoRemover->setProperty("danger", true);
+
+    cabecalho->addWidget(new QLabel("Seção:"));
+    cabecalho->addWidget(nomeEdit, 1);
+    cabecalho->addWidget(botaoSubir);
+    cabecalho->addWidget(botaoDescer);
+    cabecalho->addWidget(botaoRemover);
+    layoutGrupo->addLayout(cabecalho);
+
+    QVBoxLayout *itensLayout = new QVBoxLayout;
+    layoutGrupo->addLayout(itensLayout);
+
+    QPushButton *botaoAddItem = new QPushButton("➕ Habilidade");
+    botaoAddItem->setProperty("accent", true);
+    layoutGrupo->addWidget(botaoAddItem);
+
+    CategoriaHabilidadesWidgets widgets;
+    widgets.grupo = grupo;
+    widgets.nomeEdit = nomeEdit;
+    widgets.itensLayout = itensLayout;
+    m_categoriasHabilidades.append(widgets);
+
+    for (const Habilidade &hab : itens) {
+        CategoriaHabilidadesWidgets *c = encontrarCategoriaPorGrupo(grupo);
+        if (c)
+            adicionarLinhaNomeDescricaoUI(c->itensLayout, c->itens, hab.nome, hab.descricao);
+    }
+
+    connect(botaoAddItem, &QPushButton::clicked, this, [this, grupo]() {
+        CategoriaHabilidadesWidgets *c = encontrarCategoriaPorGrupo(grupo);
+        if (c)
+            adicionarLinhaNomeDescricaoUI(c->itensLayout, c->itens, QString(), QString());
+        marcarAlterado();
+    });
+    connect(botaoRemover, &QPushButton::clicked, this, [this, grupo]() {
+        removerCategoriaHabilidades(grupo);
+        marcarAlterado();
+    });
+    connect(botaoSubir, &QPushButton::clicked, this, [this, grupo]() {
+        moverCategoriaHabilidades(grupo, -1);
+        marcarAlterado();
+    });
+    connect(botaoDescer, &QPushButton::clicked, this, [this, grupo]() {
+        moverCategoriaHabilidades(grupo, 1);
+        marcarAlterado();
+    });
+
+    m_habilidadesLayout->addWidget(grupo);
+}
+
+void TelaEdicao::removerCategoriaHabilidades(QWidget *grupo)
+{
+    for (int i = 0; i < m_categoriasHabilidades.size(); ++i) {
+        if (m_categoriasHabilidades[i].grupo == grupo) {
+            m_habilidadesLayout->removeWidget(grupo);
+            grupo->deleteLater();
+            m_categoriasHabilidades.remove(i);
+            break;
+        }
+    }
+}
+
+void TelaEdicao::moverCategoriaHabilidades(QWidget *grupo, int direcao)
+{
+    int indice = -1;
+    for (int i = 0; i < m_categoriasHabilidades.size(); ++i) {
+        if (m_categoriasHabilidades[i].grupo == grupo) {
+            indice = i;
+            break;
+        }
+    }
+    if (indice < 0)
+        return;
+
+    const int destino = indice + direcao;
+    if (destino < 0 || destino >= m_categoriasHabilidades.size())
+        return;
+
+    m_categoriasHabilidades.swapItemsAt(indice, destino);
+
+    const int posicaoLayout = m_habilidadesLayout->indexOf(grupo);
+    m_habilidadesLayout->removeWidget(grupo);
+    m_habilidadesLayout->insertWidget(posicaoLayout + direcao, grupo);
+}
+
+void TelaEdicao::limparCategoriasHabilidadesUI()
+{
+    for (CategoriaHabilidadesWidgets &c : m_categoriasHabilidades) {
+        m_habilidadesLayout->removeWidget(c.grupo);
+        c.grupo->deleteLater();
+    }
+    m_categoriasHabilidades.clear();
+}
+
 void TelaEdicao::adicionarItemInventarioUI(const ItemInventario &modelo)
 {
     QWidget *linha = new QWidget;
     QHBoxLayout *layoutLinha = new QHBoxLayout(linha);
 
+    QCheckBox *contavelCheck = new QCheckBox("🔢");
+    contavelCheck->setToolTip("Contável (tem quantidade, ex: remédios). Desmarcado = item único, ex: uma espada específica.");
+    contavelCheck->setChecked(modelo.contavel);
+
     QSpinBox *quantidadeSpin = new QSpinBox;
     quantidadeSpin->setRange(1, 9999);
     quantidadeSpin->setValue(modelo.quantidade > 0 ? modelo.quantidade : 1);
-    quantidadeSpin->setFixedWidth(48);
+    quantidadeSpin->setFixedWidth(40);
+    quantidadeSpin->setAlignment(Qt::AlignCenter);
+    quantidadeSpin->setButtonSymbols(QAbstractSpinBox::NoButtons); // setinhas nativas ficam espremidas/inclicáveis nessa largura — já tem os botões −/+ ao lado
+
+    QPushButton *botaoMenos = new QPushButton("−");
+    botaoMenos->setFixedWidth(24);
+    botaoMenos->setProperty("compact", true);
+    botaoMenos->setToolTip("Diminuir quantidade");
+    connect(botaoMenos, &QPushButton::clicked, this, [quantidadeSpin]() { quantidadeSpin->stepDown(); });
+
+    QPushButton *botaoMais = new QPushButton("+");
+    botaoMais->setFixedWidth(24);
+    botaoMais->setProperty("compact", true);
+    botaoMais->setToolTip("Aumentar quantidade");
+    connect(botaoMais, &QPushButton::clicked, this, [quantidadeSpin]() { quantidadeSpin->stepUp(); });
+
+    auto atualizarContavel = [contavelCheck, quantidadeSpin, botaoMenos, botaoMais]() {
+        const bool contavel = contavelCheck->isChecked();
+        if (!contavel)
+            quantidadeSpin->setValue(1);
+        quantidadeSpin->setEnabled(contavel);
+        botaoMenos->setEnabled(contavel);
+        botaoMais->setEnabled(contavel);
+    };
+    atualizarContavel();
+    connect(contavelCheck, &QCheckBox::toggled, this, [this, atualizarContavel]() {
+        atualizarContavel();
+        marcarAlterado();
+    });
 
     QLineEdit *nomeEdit = new QLineEdit(modelo.nome);
     nomeEdit->setPlaceholderText("Nome do item");
@@ -666,7 +938,10 @@ void TelaEdicao::adicionarItemInventarioUI(const ItemInventario &modelo)
     botaoRemover->setProperty("compact", true);
     botaoRemover->setProperty("danger", true);
 
+    layoutLinha->addWidget(contavelCheck);
+    layoutLinha->addWidget(botaoMenos);
     layoutLinha->addWidget(quantidadeSpin);
+    layoutLinha->addWidget(botaoMais);
     layoutLinha->addWidget(nomeEdit, 1);
     layoutLinha->addWidget(utilidadeEdit, 2);
     layoutLinha->addWidget(botaoSubir);
@@ -674,7 +949,7 @@ void TelaEdicao::adicionarItemInventarioUI(const ItemInventario &modelo)
     layoutLinha->addWidget(botaoRemover);
 
     m_inventarioLayout->addWidget(linha);
-    m_itensInventario.append({linha, quantidadeSpin, nomeEdit, utilidadeEdit});
+    m_itensInventario.append({linha, quantidadeSpin, nomeEdit, utilidadeEdit, contavelCheck});
 
     connect(quantidadeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
     connect(nomeEdit, &QLineEdit::textChanged, this, [this]() { marcarAlterado(); });
@@ -737,6 +1012,67 @@ void TelaEdicao::limparInventarioUI()
     m_itensInventario.clear();
 }
 
+void TelaEdicao::adicionarRecursoUI(const RecursoCustom &modelo)
+{
+    QWidget *linha = new QWidget;
+    QHBoxLayout *layoutLinha = new QHBoxLayout(linha);
+
+    QLineEdit *nomeEdit = new QLineEdit(modelo.nome);
+    nomeEdit->setPlaceholderText("ex: Estresse, Munição, Fadiga");
+
+    QSpinBox *atualSpin = new QSpinBox;
+    atualSpin->setRange(0, 999999);
+    atualSpin->setValue(modelo.atual);
+    QSpinBox *maxSpin = new QSpinBox;
+    maxSpin->setRange(0, 999999);
+    maxSpin->setValue(modelo.max);
+    maxSpin->setSpecialValueText("Sem máximo");
+
+    QPushButton *botaoRemover = new QPushButton("🗑");
+    botaoRemover->setFixedWidth(28);
+    botaoRemover->setProperty("compact", true);
+    botaoRemover->setProperty("danger", true);
+
+    layoutLinha->addWidget(nomeEdit, 1);
+    layoutLinha->addWidget(new QLabel("Atual:"));
+    layoutLinha->addWidget(atualSpin);
+    layoutLinha->addWidget(new QLabel("Máx:"));
+    layoutLinha->addWidget(maxSpin);
+    layoutLinha->addWidget(botaoRemover);
+
+    m_recursosLayout->addWidget(linha);
+    m_recursos.append({linha, nomeEdit, atualSpin, maxSpin});
+
+    connect(nomeEdit, &QLineEdit::textChanged, this, [this]() { marcarAlterado(); });
+    connect(atualSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
+    connect(maxSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() { marcarAlterado(); });
+    connect(botaoRemover, &QPushButton::clicked, this, [this, linha]() {
+        removerRecurso(linha);
+        marcarAlterado();
+    });
+}
+
+void TelaEdicao::removerRecurso(QWidget *linha)
+{
+    for (int i = 0; i < m_recursos.size(); ++i) {
+        if (m_recursos[i].linha == linha) {
+            m_recursosLayout->removeWidget(linha);
+            linha->deleteLater();
+            m_recursos.remove(i);
+            break;
+        }
+    }
+}
+
+void TelaEdicao::limparRecursosUI()
+{
+    for (RecursoCustomWidgets &w : m_recursos) {
+        m_recursosLayout->removeWidget(w.linha);
+        w.linha->deleteLater();
+    }
+    m_recursos.clear();
+}
+
 void TelaEdicao::carregarFicha(const CharacterSheet &ficha, const QString &caminhoArquivoExistente, const QString &categoriaNova)
 {
     m_caminhoArquivoFicha = caminhoArquivoExistente;
@@ -749,6 +1085,7 @@ void TelaEdicao::carregarFicha(const CharacterSheet &ficha, const QString &camin
 void TelaEdicao::preencherCampos(const CharacterSheet &ficha)
 {
     m_imagemArquivoAtual = ficha.imagemArquivo;
+    m_focoImagem = QPointF(ficha.imagemFocoX, ficha.imagemFocoY);
 
     m_nomeEdit->setText(ficha.nome);
     m_idadeSpin->setValue(ficha.idade);
@@ -778,9 +1115,25 @@ void TelaEdicao::preencherCampos(const CharacterSheet &ficha)
     for (const ItemInventario &item : ficha.inventario)
         adicionarItemInventarioUI(item);
 
-    limparListaUI(m_habilidadesLayout, m_habilidades);
-    for (const Habilidade &hab : ficha.habilidades)
-        adicionarLinhaNomeDescricaoUI(m_habilidadesLayout, m_habilidades, hab.nome, hab.descricao);
+    limparCategoriasHabilidadesUI();
+    {
+        // agrupa por categoria preservando a ordem em que cada uma aparece pela primeira vez
+        QStringList ordemCategorias;
+        QMap<QString, QVector<Habilidade>> porCategoria;
+        for (const Habilidade &hab : ficha.habilidades) {
+            if (!porCategoria.contains(hab.categoria))
+                ordemCategorias << hab.categoria;
+            porCategoria[hab.categoria].append(hab);
+        }
+        for (const QString &categoria : ordemCategorias)
+            adicionarCategoriaHabilidadesUI(categoria, porCategoria.value(categoria));
+        if (ordemCategorias.isEmpty())
+            adicionarCategoriaHabilidadesUI(); // seção geral em branco, pra poder adicionar direto sem precisar criar uma seção antes
+    }
+
+    limparRecursosUI();
+    for (const RecursoCustom &recurso : ficha.recursos)
+        adicionarRecursoUI(recurso);
 
     QString caminhoImagemPreview;
     if (!m_imagemArquivoAtual.isEmpty())
@@ -811,8 +1164,37 @@ void TelaEdicao::escolherImagem()
         return;
 
     m_caminhoImagemOrigemNova = caminho;
+    m_focoImagem = QPointF(0.5, 0.5);
     atualizarPreviewImagem(caminho);
     marcarAlterado();
+
+    // Deixa o usuário já escolher o enquadramento na hora, que é quando mais
+    // importa (foto vertical/grande que centralizaria errado por padrão).
+    ajustarEnquadramentoImagem();
+}
+
+void TelaEdicao::ajustarEnquadramentoImagem()
+{
+    const QString caminho = caminhoImagemAtualCompleto();
+    if (caminho.isEmpty())
+        return;
+
+    AjustarFotoDialog dialogo(caminho, m_focoImagem, this);
+    if (dialogo.exec() != QDialog::Accepted)
+        return;
+
+    m_focoImagem = dialogo.foco();
+    atualizarPreviewImagem(caminho);
+    marcarAlterado();
+}
+
+QString TelaEdicao::caminhoImagemAtualCompleto() const
+{
+    if (!m_caminhoImagemOrigemNova.isEmpty())
+        return m_caminhoImagemOrigemNova;
+    if (!m_imagemArquivoAtual.isEmpty())
+        return Armazenamento::pastaImagens() + "/" + m_imagemArquivoAtual;
+    return QString();
 }
 
 void TelaEdicao::atualizarPreviewImagem(const QString &caminho)
@@ -821,11 +1203,13 @@ void TelaEdicao::atualizarPreviewImagem(const QString &caminho)
     if (!caminho.isEmpty())
         pixmap.load(caminho);
 
+    m_botaoAjustarFoto->setEnabled(!pixmap.isNull());
+
     if (pixmap.isNull()) {
         m_imagemPreview->setPixmap(QPixmap());
         m_imagemPreview->setText("Sem imagem");
     } else {
-        m_imagemPreview->setPixmap(pixmap.scaled(m_imagemPreview->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        m_imagemPreview->setPixmap(ImagemUtil::recortarComFoco(pixmap, m_imagemPreview->size(), m_focoImagem));
         m_imagemPreview->setText(QString());
     }
 }
@@ -849,6 +1233,8 @@ CharacterSheet TelaEdicao::coletarDaInterface() const
     ficha.formulaDiscernimento = m_formulaDiscernimentoEdit->text();
     ficha.descricao = m_descricaoEdit->paraHtml();
     ficha.imagemArquivo = m_imagemArquivoAtual;
+    ficha.imagemFocoX = m_focoImagem.x();
+    ficha.imagemFocoY = m_focoImagem.y();
 
     for (const AtributoWidgets &aw : m_atributos) {
         Atributo atrib;
@@ -856,6 +1242,7 @@ CharacterSheet TelaEdicao::coletarDaInterface() const
         atrib.valor = aw.valorSpin->value();
         atrib.automatico = aw.automaticoCheck->isChecked();
         atrib.formula = aw.formulaEdit->text();
+        atrib.descricao = aw.descricaoEdit->text();
 
         for (const SubAtributoWidgets &sw : aw.subs) {
             SubAtributo sub;
@@ -873,14 +1260,29 @@ CharacterSheet TelaEdicao::coletarDaInterface() const
         item.nome = iw.nomeEdit->text();
         item.quantidade = iw.quantidadeSpin->value();
         item.utilidade = iw.utilidadeEdit->text();
+        item.contavel = iw.contavelCheck->isChecked();
         ficha.inventario.append(item);
     }
 
-    for (const LinhaNomeDescricaoWidgets &hw : m_habilidades) {
-        Habilidade hab;
-        hab.nome = hw.nomeEdit->text();
-        hab.descricao = hw.descricaoEdit->text();
-        ficha.habilidades.append(hab);
+    for (const CategoriaHabilidadesWidgets &c : m_categoriasHabilidades) {
+        const QString categoria = c.nomeEdit->text().trimmed();
+        for (const LinhaNomeDescricaoWidgets &hw : c.itens) {
+            if (hw.nomeEdit->text().trimmed().isEmpty() && hw.descricaoEdit->text().trimmed().isEmpty())
+                continue; // linha em branco dentro de uma seção não vira habilidade vazia
+            Habilidade hab;
+            hab.nome = hw.nomeEdit->text();
+            hab.descricao = hw.descricaoEdit->text();
+            hab.categoria = categoria;
+            ficha.habilidades.append(hab);
+        }
+    }
+
+    for (const RecursoCustomWidgets &rw : m_recursos) {
+        RecursoCustom recurso;
+        recurso.nome = rw.nomeEdit->text();
+        recurso.atual = rw.atualSpin->value();
+        recurso.max = rw.maxSpin->value();
+        ficha.recursos.append(recurso);
     }
 
     return ficha;

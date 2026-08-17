@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointF>
 #include <QVector>
 #include <QWidget>
 
@@ -11,10 +12,13 @@ class QVBoxLayout;
 class QSpinBox;
 class QDoubleSpinBox;
 class QCheckBox;
+class QPushButton;
 class EditorNotas;
 
-// Tela de edição de uma ficha: nome, imagem, idade/altura, vida, discernimento,
-// atributos/sub-atributos, inventário e habilidades dinâmicos, e notas livres.
+// Tela de edição de uma ficha, organizada em abas (Geral / Status / Atributos
+// / Inventário / Habilidades / Notas): nome, imagem, idade/altura, vida,
+// sanidade, discernimento, recursos personalizados, atributos/sub-atributos,
+// inventário e habilidades dinâmicos, e notas livres.
 class TelaEdicao : public QWidget
 {
     Q_OBJECT
@@ -45,8 +49,17 @@ private:
         QSpinBox *valorSpin;
         QCheckBox *automaticoCheck;
         QLineEdit *formulaEdit;
+        QLineEdit *descricaoEdit;
         QVBoxLayout *subLayout;
         QVector<SubAtributoWidgets> subs;
+    };
+
+    struct RecursoCustomWidgets
+    {
+        QWidget *linha;
+        QLineEdit *nomeEdit;
+        QSpinBox *atualSpin;
+        QSpinBox *maxSpin;
     };
 
     struct LinhaNomeDescricaoWidgets
@@ -56,12 +69,21 @@ private:
         QLineEdit *descricaoEdit;
     };
 
+    struct CategoriaHabilidadesWidgets
+    {
+        QWidget *grupo;
+        QLineEdit *nomeEdit; // nome da seção (ex: "Rituais"); vazio = seção geral
+        QVBoxLayout *itensLayout;
+        QVector<LinhaNomeDescricaoWidgets> itens;
+    };
+
     struct ItemInventarioWidgets
     {
         QWidget *linha;
         QSpinBox *quantidadeSpin;
         QLineEdit *nomeEdit;
         QLineEdit *utilidadeEdit;
+        QCheckBox *contavelCheck;
     };
 
     void montarInterface();
@@ -70,6 +92,7 @@ private:
     void adicionarAtributoUI(const Atributo &modelo = Atributo());
     void adicionarSubAtributoUI(AtributoWidgets &atributoWidgets, const SubAtributo &modelo = SubAtributo());
     void removerAtributo(QWidget *grupo);
+    void moverAtributo(QWidget *grupo, int direcao);
     void removerSubAtributo(QWidget *grupo, QWidget *linha);
     void moverSubAtributoParaOutroGrupo(QWidget *grupoOrigem, QWidget *linha);
     AtributoWidgets *encontrarAtributoPorGrupo(QWidget *grupo);
@@ -79,15 +102,27 @@ private:
     void removerLinhaNomeDescricao(QVBoxLayout *layout, QVector<LinhaNomeDescricaoWidgets> &lista, QWidget *linha);
     void moverLinhaNomeDescricao(QVBoxLayout *layout, QVector<LinhaNomeDescricaoWidgets> &lista, QWidget *linha, int direcao);
 
+    void limparCategoriasHabilidadesUI();
+    void adicionarCategoriaHabilidadesUI(const QString &nomeCategoria = QString(), const QVector<Habilidade> &itens = {});
+    void removerCategoriaHabilidades(QWidget *grupo);
+    void moverCategoriaHabilidades(QWidget *grupo, int direcao);
+    CategoriaHabilidadesWidgets *encontrarCategoriaPorGrupo(QWidget *grupo);
+
     void limparInventarioUI();
     void adicionarItemInventarioUI(const ItemInventario &modelo = ItemInventario());
     void removerItemInventario(QWidget *linha);
     void moverItemInventario(QWidget *linha, int direcao);
 
+    void limparRecursosUI();
+    void adicionarRecursoUI(const RecursoCustom &modelo = RecursoCustom());
+    void removerRecurso(QWidget *linha);
+
     void preencherCampos(const CharacterSheet &ficha);
 
     void escolherImagem();
+    void ajustarEnquadramentoImagem();
     void atualizarPreviewImagem(const QString &caminho);
+    QString caminhoImagemAtualCompleto() const;
     CharacterSheet coletarDaInterface() const;
     void salvar();
     void salvarComoTemplate();
@@ -117,15 +152,20 @@ private:
     QVBoxLayout *m_atributosLayout;
     QVector<AtributoWidgets> m_atributos;
 
+    QVBoxLayout *m_recursosLayout;
+    QVector<RecursoCustomWidgets> m_recursos;
+
     QDoubleSpinBox *m_dinheiroSpin;
     QVBoxLayout *m_inventarioLayout;
     QVector<ItemInventarioWidgets> m_itensInventario;
 
     QVBoxLayout *m_habilidadesLayout;
-    QVector<LinhaNomeDescricaoWidgets> m_habilidades;
+    QVector<CategoriaHabilidadesWidgets> m_categoriasHabilidades;
 
     QString m_caminhoImagemOrigemNova; // imagem escolhida agora, ainda não copiada pra pasta do app
     QString m_imagemArquivoAtual;      // nome do arquivo já salvo em imagens/ (se houver)
+    QPointF m_focoImagem = QPointF(0.5, 0.5); // qual parte da imagem fica centralizada na miniatura
+    QPushButton *m_botaoAjustarFoto;
     QString m_caminhoArquivoFicha;     // vazio enquanto a ficha nunca foi salva
     QString m_caminhoArquivoOriginal;  // caminho com que a edição começou (vazio se é ficha nova)
     QString m_categoriaNova;           // pasta destino quando a ficha ainda não foi salva

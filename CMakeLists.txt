@@ -70,6 +70,10 @@ add_executable(FichaRPG
     src/googledrivedialog.cpp
     src/contadialog.h
     src/contadialog.cpp
+    src/imagemutil.h
+    src/imagemutil.cpp
+    src/ajustarfotodialog.h
+    src/ajustarfotodialog.cpp
     resources/icons.qrc
 )
 
